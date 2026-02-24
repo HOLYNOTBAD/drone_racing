@@ -101,7 +101,7 @@ void publish_waypoints_vis() {
     poseArray.header.frame_id = std::string("world");
     poseArray.header.stamp = ros::Time::now();
 
-    {
+    if (is_odom_ready) {
         geometry_msgs::Pose init_pose;
         init_pose = odom.pose.pose;
         poseArray.poses.push_back(init_pose);

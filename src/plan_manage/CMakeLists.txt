@@ -54,7 +54,6 @@ include_directories(
 add_executable(il_planner_node
   src/il_planner_node.cpp 
   src/racing_fsm.cpp
-  src/planner_manager.cpp
   )
 target_link_libraries(il_planner_node 
   ${catkin_LIBRARIES}

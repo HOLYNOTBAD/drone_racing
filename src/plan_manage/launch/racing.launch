@@ -8,61 +8,59 @@
     <arg name="odometry_topic" value="$(arg odom_topic)"/>
 
     <!-- maximum velocity and acceleration the drone will reach -->
-    <arg name="max_vel" value="5.0" />
+    <arg name="max_vel" value="15.0" />
     <arg name="max_acc" value="6.0" />
 
-    <!-- 1: use 2D Nav Goal to select goal  -->
-    <!-- 2: use global waypoints below  -->
-    <arg name="flight_type" value="2" />
-    
     <!-- global waypoints -->
     <!-- If flight_type is set to 2, the drone will travel these waypoints one by one -->
     <arg name="point_num" value="10" />
 
-    <arg name="point0_x" value="15.0" />
+    <arg name="point0_x" value="0.0" />
     <arg name="point0_y" value="0.0" />
     <arg name="point0_z" value="1.0" />
 
-    <arg name="point1_x" value="8.0" />
-    <arg name="point1_y" value="6.0" />
-    <arg name="point1_z" value="1.5" />
+    <arg name="point1_x" value="6.0" />
+    <arg name="point1_y" value="4.0" />
+    <arg name="point1_z" value="1.0" />
 
-    <arg name="point2_x" value="0.0" />
-    <arg name="point2_y" value="7.0" />
-    <arg name="point2_z" value="2.0" />
+    <arg name="point2_x" value="12.0" />
+    <arg name="point2_y" value="-4.0" />
+    <arg name="point2_z" value="1.0" />
 
-    <arg name="point3_x" value="-8.0" />
-    <arg name="point3_y" value="6.0" />
-    <arg name="point3_z" value="1.5" />
+    <arg name="point3_x" value="18.0" />
+    <arg name="point3_y" value="4.0" />
+    <arg name="point3_z" value="1.0" />
 
-    <arg name="point4_x" value="-15.0" />
-    <arg name="point4_y" value="0.0" />
+    <arg name="point4_x" value="12.0" />
+    <arg name="point4_y" value="10.0" />
     <arg name="point4_z" value="1.0" />
 
-    <arg name="point5_x" value="-12.0" />
-    <arg name="point5_y" value="-5.0" />
-    <arg name="point5_z" value="1.5" />
+    <arg name="point5_x" value="0.0" />
+    <arg name="point5_y" value="10.0" />
+    <arg name="point5_z" value="1.0" />
 
     <arg name="point6_x" value="-6.0" />
-    <arg name="point6_y" value="-8.0" />
-    <arg name="point6_z" value="2.0" />
+    <arg name="point6_y" value="4.0" />
+    <arg name="point6_z" value="1.0" />
 
-    <arg name="point7_x" value="2.0" />
-    <arg name="point7_y" value="-7.0" />
-    <arg name="point7_z" value="1.5" />
+    <arg name="point7_x" value="-12.0" />
+    <arg name="point7_y" value="-4.0" />
+    <arg name="point7_z" value="1.0" />
 
-    <arg name="point8_x" value="10.0" />
-    <arg name="point8_y" value="-5.0" />
+    <arg name="point8_x" value="-6.0" />
+    <arg name="point8_y" value="-10.0" />
     <arg name="point8_z" value="1.0" />
 
-    <arg name="point9_x" value="13.0" />
-    <arg name="point9_y" value="-2.0" />
+    <arg name="point9_x" value="6.0" />
+    <arg name="point9_y" value="-10.0" />
     <arg name="point9_z" value="1.0" />
 
-
-
-    
   </include>
+
+  <!-- data visualization -->
+  <node name="data_plot" pkg="rqt_plot" type="rqt_plot" 
+    args="/visualizer/speed_cmd /visualizer/real_speed /visualizer/total_thrust_cmd /visualizer/real_total_thrust">
+  </node>
 
   <!-- trajectory server -->
   <node pkg="plan_manage" name="il_traj_server" type="il_traj_server" output="screen">

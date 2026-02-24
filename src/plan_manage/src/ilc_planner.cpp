@@ -16,11 +16,6 @@ bool ilc_planner::setPlan(std::vector<Eigen::Vector3d> orig_global_plan, Eigen::
   _robot_pose = robot_pose; // 保存当前机器人位姿
   _robot_vel = robot_vel; // 保存当前机器人速度
 
-  // cout << "path" << _global_plan.size() << endl; // 调试输出：路径长度
-  // for (auto i = 0; i != _global_plan.size(); ++i) cout << _global_plan[i][0] << " "<< _global_plan[i][1] << " " << _global_plan[i][2] << " i  " << endl; // 打印路径点
-
-  // pruneGlobalPlan(1); // 可选：裁剪已过的路径点
-
   double v_init = v_min + v_max / 3;       // 初始速度设为最小速度 v_min
   // double v_init = _robot_vel.norm();    // 也可以使用当前速度作为初始速度
   std::vector<double> v_list(_global_plan.size(),v_init); // 构造与路径等长的速度列表 v_list 并初始化为 v_init
@@ -31,13 +26,6 @@ bool ilc_planner::setPlan(std::vector<Eigen::Vector3d> orig_global_plan, Eigen::
   return true; // 返回成功
 }
 
-// void ilc_planner::set_param(double vmin, double vmax, double goalth)
-// {
-//   v_max = vmax;
-//   v_min = vmin;
-//   goal_th = goalth;
-// }
-// 设置多个参数：速度上下限、阈值、学习增益等
 void ilc_planner::set_param(double vmin, double vmax, double goalth, double kpvl, double kplaw, double kdlaw, std::vector<double> xth, double kppath, double kdpath, double tau, int iteration)
 {
   v_max = vmax; // 速度上限
@@ -167,11 +155,7 @@ void ilc_planner::getpoint(Eigen::Vector3d p, Eigen::Vector3d &refer_pose, Eigen
       move_direction = (next_p_des - p_des).normalized(); // 切向方向为下一个点减当前点并单位化
     }
   }
-  // cout<< "current: " << current << endl;
-  // cout<< "error: " << error << endl;
-  // error = (_global_plan[cc]-p).norm();
-  // cout<< "error: " << error << endl;
-  // cout<< "move_track: " << move_track << endl;
+
 
 }
 
