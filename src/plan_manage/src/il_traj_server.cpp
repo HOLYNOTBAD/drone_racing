@@ -571,18 +571,19 @@ int main(int argc, char** argv) {
 
   /*************************************** START IL-Planner相关变量 ***************************************/
   // 从参数服务器加载 ILC 参数
-  nh.param("ILParam/vmax",       _vmax,        14.0);
-  nh.param("ILParam/vmin",       _vmin,        2.0);
-  nh.param("ILParam/goalth",     _goalth,      1.0);
-  nh.param("ILParam/xth",        _xth,         0.5);
-  nh.param("ILParam/kp_law",     _kp_law,      1.0);
-  nh.param("ILParam/kp_vl",      _kp_vl,       0.4);
-  nh.param("ILParam/kd_law",     _kd_law,      0.6);
-  nh.param("ILParam/kp_path",    _kp_path,     2.9);
-  nh.param("ILParam/kd_path",    _kd_path,     2.5);
-  nh.param("ILParam/iteration",  _iteration,   10);
-  nh.param("ILParam/dynamic",    _tau,         2.5);
-  nh.param("ILParam/amax",       _amax,        6.0);
+  nh.param("ILParam/vmax", _vmax, 2.0);
+  nh.param("ILParam/vmin", _vmin, 1.0);
+  nh.param("ILParam/goalth", _goalth, 1.0);
+  nh.param("ILParam/xth", _xth, 0.5);
+  nh.param("ILParam/kp_law", _kp_law, 1.0);
+  nh.param("ILParam/kp_vl", _kp_vl, 0.4);
+  nh.param("ILParam/kd_law", _kd_law, 0.6);
+  nh.param("ILParam/kp_path", _kp_path, 2.9);
+  nh.param("ILParam/kd_path", _kd_path, 2.5);
+  nh.param("ILParam/iteration", _iteration, 10);
+  nh.param("ILParam/dynamic", _tau, 2.5);
+  nh.param("ILParam/amax", _amax, 6.0);
+
 
   // 初始化 ILC planner (仅在 traj_server 中创建和使用)
   ilcplan = new ilc_planner();

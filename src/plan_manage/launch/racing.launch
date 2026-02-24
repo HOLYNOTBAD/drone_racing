@@ -1,61 +1,51 @@
 <launch>
   <!-- topic of your odometry such as VIO or LIO -->
-  <arg name="odom_topic" value="/state_ukf/odom" />
+  <arg name="odom_topic" value="/state_ukf/odom" />、
+  <arg name="odometry_topic" value="$(arg odom_topic)"/>
 
   <!-- main algorithm params -->
-  <include file="$(find plan_manage)/launch/racing.xml">
+  <!-- maximum velocity and acceleration the drone will reach -->
+  <arg name="max_vel" value="15.0" />
+  <arg name="max_acc" value="6.0" />
 
-    <arg name="odometry_topic" value="$(arg odom_topic)"/>
-
-    <!-- maximum velocity and acceleration the drone will reach -->
-    <arg name="max_vel" value="15.0" />
-    <arg name="max_acc" value="6.0" />
-
+  <!-- main node -->
+  <node pkg="plan_manage" name="il_planner_node" type="il_planner_node" output="screen">
+    <remap from="/odom_world" to="$(arg odometry_topic)"/>
+    
     <!-- global waypoints -->
-    <!-- If flight_type is set to 2, the drone will travel these waypoints one by one -->
-    <arg name="point_num" value="10" />
+    <param name="fsm/waypoint_num" value="10" type="int"/>
+    <param name="fsm/waypoint0_x" value="0.0" type="double"/>
+    <param name="fsm/waypoint0_y" value="0.0" type="double"/>
+    <param name="fsm/waypoint0_z" value="1.0" type="double"/>
+    <param name="fsm/waypoint1_x" value="6.0" type="double"/>
+    <param name="fsm/waypoint1_y" value="4.0" type="double"/>
+    <param name="fsm/waypoint1_z" value="1.0" type="double"/>
+    <param name="fsm/waypoint2_x" value="12.0" type="double"/>
+    <param name="fsm/waypoint2_y" value="-4.0" type="double"/>
+    <param name="fsm/waypoint2_z" value="1.0" type="double"/>
+    <param name="fsm/waypoint3_x" value="18.0" type="double"/>
+    <param name="fsm/waypoint3_y" value="4.0" type="double"/>
+    <param name="fsm/waypoint3_z" value="1.0" type="double"/>
+    <param name="fsm/waypoint4_x" value="12.0" type="double"/>
+    <param name="fsm/waypoint4_y" value="10.0" type="double"/>
+    <param name="fsm/waypoint4_z" value="1.0" type="double"/>
+    <param name="fsm/waypoint5_x" value="0.0" type="double"/>
+    <param name="fsm/waypoint5_y" value="10.0" type="double"/>
+    <param name="fsm/waypoint5_z" value="1.0" type="double"/>
+    <param name="fsm/waypoint6_x" value="-6.0" type="double"/>
+    <param name="fsm/waypoint6_y" value="4.0" type="double"/>
+    <param name="fsm/waypoint6_z" value="1.0" type="double"/>
+    <param name="fsm/waypoint7_x" value="-12.0" type="double"/>
+    <param name="fsm/waypoint7_y" value="-4.0" type="double"/>
+    <param name="fsm/waypoint7_z" value="1.0" type="double"/>
+    <param name="fsm/waypoint8_x" value="-6.0" type="double"/>
+    <param name="fsm/waypoint8_y" value="-10.0" type="double"/>
+    <param name="fsm/waypoint8_z" value="1.0" type="double"/>
+    <param name="fsm/waypoint9_x" value="6.0" type="double"/>
+    <param name="fsm/waypoint9_y" value="-10.0" type="double"/>
+    <param name="fsm/waypoint9_z" value="1.0" type="double"/>
 
-    <arg name="point0_x" value="0.0" />
-    <arg name="point0_y" value="0.0" />
-    <arg name="point0_z" value="1.0" />
-
-    <arg name="point1_x" value="6.0" />
-    <arg name="point1_y" value="4.0" />
-    <arg name="point1_z" value="1.0" />
-
-    <arg name="point2_x" value="12.0" />
-    <arg name="point2_y" value="-4.0" />
-    <arg name="point2_z" value="1.0" />
-
-    <arg name="point3_x" value="18.0" />
-    <arg name="point3_y" value="4.0" />
-    <arg name="point3_z" value="1.0" />
-
-    <arg name="point4_x" value="12.0" />
-    <arg name="point4_y" value="10.0" />
-    <arg name="point4_z" value="1.0" />
-
-    <arg name="point5_x" value="0.0" />
-    <arg name="point5_y" value="10.0" />
-    <arg name="point5_z" value="1.0" />
-
-    <arg name="point6_x" value="-6.0" />
-    <arg name="point6_y" value="4.0" />
-    <arg name="point6_z" value="1.0" />
-
-    <arg name="point7_x" value="-12.0" />
-    <arg name="point7_y" value="-4.0" />
-    <arg name="point7_z" value="1.0" />
-
-    <arg name="point8_x" value="-6.0" />
-    <arg name="point8_y" value="-10.0" />
-    <arg name="point8_z" value="1.0" />
-
-    <arg name="point9_x" value="6.0" />
-    <arg name="point9_y" value="-10.0" />
-    <arg name="point9_z" value="1.0" />
-
-  </include>
+  </node>
 
   <!-- data visualization -->
   <node name="data_plot" pkg="rqt_plot" type="rqt_plot" 
@@ -65,11 +55,23 @@
   <!-- trajectory server -->
   <node pkg="plan_manage" name="il_traj_server" type="il_traj_server" output="screen">
     <remap from="/position_cmd" to="planning/pos_cmd"/>
-
     <remap from="/odom_world" to="$(arg odom_topic)"/>
     <param name="traj_server/time_forward" value="1.5" type="double"/>
+    <param name="ILParam/vmax" value="10.0" type="double"/>
+    <param name="ILParam/vmin" value="1.0" type="double"/>
+    <param name="ILParam/goalth" value="1.0" type="double"/>
+    <param name="ILParam/xth" value="0.6" type="double"/>
+    <param name="ILParam/kp_law" value="1.0" type="double"/>
+    <param name="ILParam/kp_vl" value="1.5" type="double"/>
+    <param name="ILParam/kd_law" value="0.6" type="double"/>
+    <param name="ILParam/kp_path" value="3.2" type="double"/>
+    <param name="ILParam/kd_path" value="4.5" type="double"/>
+    <param name="ILParam/iteration" value="30" type="int"/>
+    <param name="ILParam/dynamic" value="3.0" type="double"/>
+    <param name="ILParam/amax" value="6.0" type="double"/>
   </node>
 
+  <!-- waypoint generator -->
   <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator" output="screen">
     <remap from="~odom" to="$(arg odom_topic)"/>        
     <remap from="~goal" to="/move_base_simple/goal"/>
@@ -77,7 +79,7 @@
     <param name="waypoint_type" value="manual-lonely-waypoint"/>    
   </node>
 
-  <!-- use simulator -->
+  <!-- uav simulator -->
   <include file="$(find plan_manage)/launch/simulator.xml">
     <arg name="map_size_x_" value="40.0"/>
     <arg name="map_size_y_" value="20.0"/>
