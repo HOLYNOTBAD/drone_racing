@@ -43,10 +43,6 @@
 #include <plan_manage/Bspline.h>
 #include <traj_utils/planning_visualization.h>
 
-// ========== AUTO TRAIN SWITCH ==========
-// Comment out this line to disable auto training
-//#define AUTO_TRAIN 
-// =======================================
 
 using namespace std;
 
@@ -71,6 +67,8 @@ private:
   /* planning data */
   bool trigger_, have_target_, have_odom_;
   FSM_EXEC_STATE exec_state_;
+  bool auto_fsm_;              // 是否自动进行状态机切换
+  int auto_fsm_iteration_;     // 自动模式下最多跑多少圈(<=0 表示不限制)
 
   Eigen::Vector3d odom_pos_, odom_vel_;  // odometry state
   Eigen::Quaterniond odom_orient_;

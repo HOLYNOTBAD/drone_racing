@@ -12,6 +12,9 @@
   <node pkg="plan_manage" name="il_planner_node" type="il_planner_node" output="screen">
     <remap from="/odom_world" to="$(arg odometry_topic)"/>
     
+    <param name="fsm/auto_fsm" value="true" />
+    <param name="fsm/auto_fsm_iteration" value="2" type="int"/>
+
     <!-- global waypoints -->
     <param name="fsm/waypoint_num" value="10" type="int"/>
     <param name="fsm/waypoint0_x" value="0.0" type="double"/>
@@ -51,6 +54,8 @@
   <node name="data_plot" pkg="rqt_plot" type="rqt_plot" 
     args="/visualizer/speed_cmd /visualizer/real_speed /visualizer/total_thrust_cmd /visualizer/real_total_thrust">
   </node>
+
+
 
   <!-- trajectory server -->
   <node pkg="plan_manage" name="il_traj_server" type="il_traj_server" output="screen">

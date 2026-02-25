@@ -59,7 +59,11 @@ target_link_libraries(il_planner_node
   ${catkin_LIBRARIES}
   )
 
-add_executable(il_traj_server src/il_traj_server.cpp src/il_planner.cpp)
+add_executable(il_traj_server
+  src/il_traj_server.cpp
+  src/il_planner.cpp
+  src/lap_logger.cpp
+)
 target_link_libraries(il_traj_server ${catkin_LIBRARIES})
 add_dependencies(il_traj_server ${${PROJECT_NAME}_EXPORTED_TARGETS})
 

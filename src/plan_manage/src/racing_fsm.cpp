@@ -13,6 +13,15 @@ void RacingFSM::init(ros::NodeHandle& nh) {
   trigger_     = false;
   lap_cnt_     = 0;
 
+  // 是否自动状态机（自动跑圈）由参数控制
+  nh.param("fsm/auto_fsm", auto_fsm_, false);
+  // 自动模式下跑圈上限（<=0 不限制）。优先读取 fsm/auto_fsm_iteration，其次兼容 fsm/iteration
+  auto_fsm_iteration_ = -1;
+  nh.param("fsm/auto_fsm_iteration", auto_fsm_iteration_, auto_fsm_iteration_);
+  if (auto_fsm_iteration_ <= 0) {
+    nh.param("fsm/iteration", auto_fsm_iteration_, auto_fsm_iteration_);
+  }
+
   /*  fsm param  */
 
 
@@ -172,14 +181,14 @@ void RacingFSM::execFSMCallback(const ros::TimerEvent& e) {
     }
 
     case WAIT_TRIGGER: {
-      
-#ifdef AUTO_TRAIN
+      // 自动模式：不需要外部 trigger，直接进入执行轨迹
+      if (auto_fsm_) {
         changeFSMExecState(EXEC_TRAJ, "FSM");
-        trigger_ = false; // 重置trigger
-        flight_start_time_ = ros::Time::now(); // Start flight timer
-#endif
-
-      if (trigger_) {
+        trigger_ = false;
+        flight_start_time_ = ros::Time::now();
+      }
+      // 手动模式：仍然由 RViz 2D Nav Goal 触发
+      else if (trigger_) {
         changeFSMExecState(EXEC_TRAJ, "FSM");
         trigger_ = false; // 重置trigger
         flight_start_time_ = ros::Time::now(); // Start flight timer
@@ -217,16 +226,25 @@ void RacingFSM::execFSMCallback(const ros::TimerEvent& e) {
         lap_msg.data = lap_cnt_;
         lap_cnt_pub_.publish(lap_msg);
 
+        // 若达到自动跑圈上限，则退出自动模式（后续需要手动 trigger 才会继续切换状态）
+        if (auto_fsm_ && auto_fsm_iteration_ > 0 && lap_cnt_ >= auto_fsm_iteration_) {
+          auto_fsm_ = false;
+        }
+
         break;
       }
 
+
+      break;
     }
 
     case HOVER: {
-#ifdef AUTO_TRAIN
+      // 自动模式：悬停结束后自动回到起点，开启下一圈
+      if (auto_fsm_) {
         changeFSMExecState(GO_START, "FSM");
-#endif
-      if (trigger_) {
+      }
+      // 手动模式：通过 RViz 2D Nav Goal 再次触发
+      else if (trigger_) {
         changeFSMExecState(GO_START, "FSM");
         trigger_ = false;
       }

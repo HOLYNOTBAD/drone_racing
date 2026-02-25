@@ -11,6 +11,7 @@
 #include <chrono>
 #include <limits>
 #include <algorithm>
+#include <plan_manage/lap_logger.h>
 
 ros::Publisher pos_pub, traj_pub, vel_pub, vel_field_pub, drone_arrow_pub;
 ros::Publisher speed_pub, thr_pub, real_speed_pub, real_thr_pub;
@@ -47,6 +48,9 @@ int current_lap = 0;
 // Record lap times
 std::vector<double> lap_times;
 ros::Time lap_start_time;
+
+// Lap logger instance (single CSV for all laps)
+LapLogger g_lap_logger;
 
 // yaw control
 double last_yaw_;
@@ -255,6 +259,9 @@ void stateCallback(const std_msgs::Int32ConstPtr& msg) {
   if (fsm_state != 3 && msg->data == 3) {
       lap_start_time = ros::Time::now();
       ROS_INFO("[traj_server] Lap %d started ", current_lap + 1);
+
+      // start logging for this lap (use current_lap+1 as lap id)
+      g_lap_logger.startLap(current_lap + 1, lap_start_time);
   }
   
   fsm_state = msg->data;
@@ -274,6 +281,9 @@ void lapCallback(const std_msgs::Int32ConstPtr& msg) {
                 std::cout << lap_times[i] << (i < lap_times.size() - 1 ? ", " : "");
             }
             std::cout << "]" << std::endl;
+
+            // notify logger that this lap has ended
+            g_lap_logger.endLap();
         }
     }
     current_lap = msg->data;
@@ -362,6 +372,9 @@ void odomCallbck(const nav_msgs::Odometry& msg) {
         std_msgs::Float64 real_thr_msg;
         real_thr_msg.data = (accel + Eigen::Vector3d(0, 0, 9.8)).norm();
         real_thr_pub.publish(real_thr_msg);
+
+            // update lap logger with latest real values
+            g_lap_logger.updateReal(real_speed_msg.data, real_thr_msg.data);
       }
 
       last_real_vel_ = current_vel;
@@ -375,6 +388,9 @@ void odomCallbck(const nav_msgs::Odometry& msg) {
     }
 
   }
+
+  // log one sample for this odom
+  g_lap_logger.logSample(odom.header.stamp, fsm_state);
 
   traj_real_.push_back(
       Eigen::Vector3d(odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z));
@@ -452,6 +468,9 @@ void velCallback(const ros::TimerEvent& e)
             thr_msg.data = (acc + Eigen::Vector3d(0.0, 0.0, 9.8)).norm();
             speed_pub.publish(speed_msg);
             thr_pub.publish(thr_msg);
+
+            // update lap logger with latest command values
+            g_lap_logger.updateCommand(speed_msg.data, thr_msg.data);
         }
     }
     else
@@ -598,6 +617,9 @@ int main(int argc, char** argv) {
   ros::init(argc, argv, "traj_server");
   ros::NodeHandle node;
   ros::NodeHandle nh("~");
+
+  // 初始化单一 CSV 日志文件（包含所有圈）
+  g_lap_logger.init("/home/holy/drone_racing/data/lap_logs.csv");
 
   /* get start pos */
   std::vector<double> init_pos_vec;
