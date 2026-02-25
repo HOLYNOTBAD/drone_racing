@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <iostream>
 #include <nav_msgs/Path.h>
+#include <nav_msgs/Odometry.h>
 #include <ros/ros.h>
 #include <std_msgs/Empty.h>
 #include <std_msgs/Int32.h>
@@ -38,10 +39,16 @@
 #include <string>
 #include <geometry_msgs/PoseStamped.h>
 
-#include <bspline_opt/bspline_optimizer.h>
 #include <bspline/non_uniform_bspline.h>
 #include <plan_manage/Bspline.h>
 #include <traj_utils/planning_visualization.h>
+
+// ========== AUTO TRAIN SWITCH ==========
+// Comment out this line to disable auto training
+//#define AUTO_TRAIN 
+// =======================================
+
+using namespace std;
 
 using std::vector;
 

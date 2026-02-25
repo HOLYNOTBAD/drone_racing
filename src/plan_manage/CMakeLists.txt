@@ -12,10 +12,10 @@ find_package(PCL 1.7 REQUIRED)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
+  nav_msgs
   geometry_msgs
   quadrotor_msgs
   bspline
-  bspline_opt
   traj_utils
   message_generation
   cv_bridge
@@ -38,7 +38,7 @@ generate_messages(
 catkin_package(
  INCLUDE_DIRS include
  LIBRARIES plan_manage
- CATKIN_DEPENDS plan_env path_searching bspline bspline_opt traj_utils message_runtime
+ CATKIN_DEPENDS bspline traj_utils message_runtime
 #  DEPENDS system_lib
 )
 
@@ -59,7 +59,7 @@ target_link_libraries(il_planner_node
   ${catkin_LIBRARIES}
   )
 
-add_executable(il_traj_server src/il_traj_server.cpp src/ilc_planner.cpp)
+add_executable(il_traj_server src/il_traj_server.cpp src/il_planner.cpp)
 target_link_libraries(il_traj_server ${catkin_LIBRARIES})
 add_dependencies(il_traj_server ${${PROJECT_NAME}_EXPORTED_TARGETS})
 

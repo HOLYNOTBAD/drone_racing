@@ -57,10 +57,13 @@
     <remap from="/position_cmd" to="planning/pos_cmd"/>
     <remap from="/odom_world" to="$(arg odom_topic)"/>
     <param name="traj_server/time_forward" value="1.5" type="double"/>
+
+    <param name="ILParam/use_ilc" value="true" type="bool"/>
+
     <param name="ILParam/vmax" value="10.0" type="double"/>
-    <param name="ILParam/vmin" value="1.0" type="double"/>
+    <param name="ILParam/vmin" value="5.0" type="double"/>
     <param name="ILParam/goalth" value="1.0" type="double"/>
-    <param name="ILParam/xth" value="0.6" type="double"/>
+    <param name="ILParam/xth" value="2" type="double"/>
     <param name="ILParam/kp_law" value="1.0" type="double"/>
     <param name="ILParam/kp_vl" value="1.5" type="double"/>
     <param name="ILParam/kd_law" value="0.6" type="double"/>

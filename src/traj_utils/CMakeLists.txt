@@ -1,23 +1,22 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(bspline)
+project(traj_utils)
 
 set(CMAKE_CXX_STANDARD 14)
+
+find_package(catkin REQUIRED COMPONENTS
+  bspline
+  roscpp
+  std_msgs
+  cv_bridge
+)
 
 find_package(Eigen3 REQUIRED)
 find_package(PCL 1.7 REQUIRED)
 
-find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  rospy
-  std_msgs
-  visualization_msgs
-  cv_bridge
-)
-
 catkin_package(
  INCLUDE_DIRS include
- LIBRARIES bspline
- CATKIN_DEPENDS
+ LIBRARIES traj_utils
+ CATKIN_DEPENDS  bspline 
 #  DEPENDS system_lib
 )
 
@@ -29,11 +28,13 @@ include_directories(
     ${PCL_INCLUDE_DIRS}
 )
 
-set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS} -O3 -Wall")
+link_directories(${PCL_LIBRARY_DIRS})
 
-add_library( bspline 
-    src/non_uniform_bspline.cpp 
+set(CMAKE_CXX_FLAGS "-std=c++14 ${CMAKE_CXX_FLAGS} -O3 -Wall")
+
+add_library( traj_utils
+    src/planning_visualization.cpp 
     )
-target_link_libraries( bspline
+target_link_libraries( traj_utils
     ${catkin_LIBRARIES} 
     )  

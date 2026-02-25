@@ -6,7 +6,7 @@
 #include "std_msgs/Float64.h" // Add this include
 #include "std_msgs/Int32.h"
 #include "visualization_msgs/Marker.h"
-#include "plan_manage/ilc_planner.h"
+#include "plan_manage/il_planner.h"
 #include <ros/ros.h>
 #include <chrono>
 #include <limits>
@@ -19,16 +19,17 @@ nav_msgs::Odometry odom;
 Eigen::Vector3d last_real_vel_ = Eigen::Vector3d::Zero();
 ros::Time last_odom_time_ = ros::Time(0);
 
-// ILC planner 实例 (仅在 traj_server 中使用)
-ilc_planner* ilcplan = nullptr;
+// IL planner 实例 (仅在 traj_server 中使用)
+il_planner* ilplan = nullptr;
 bool _has_traj = false;
 Eigen::Vector3d _start_pt;
 Eigen::Vector3d _init_pos; // Add _init_pos
 Eigen::Vector3d last_vel_cmd_;
 
-// ILC 参数
+// IL 参数
 double _vmin, _vmax, _goalth, _xth, _kp_vl, _kp_law, _kd_law, _kp_path, _kd_path, _tau, _amax;
 int _iteration;
+bool use_ilc_; // Add use_ilc_ variable
 
 quadrotor_msgs::PositionCommand cmd;
 // double pos_gain[3] = {5.7, 5.7, 6.2};
@@ -36,14 +37,16 @@ quadrotor_msgs::PositionCommand cmd;
 double pos_gain[3] = { 5.7, 5.7, 6.2 };
 double vel_gain[3] = { 3.4, 3.4, 4.0 };
 
-// using NonUniformBspline = NonUniformBspline<Eigen::Vector3d>;
-
 bool receive_traj_ = false;
 vector<NonUniformBspline> traj_;
 double traj_duration_;
 ros::Time start_time_;
 int traj_id_;
 int fsm_state = -1;  // INIT:0 GO_START:1 WAIT_TRIGGER:2 EXEC_TRAJ:3 HOVER:4
+int current_lap = 0;
+// Record lap times
+std::vector<double> lap_times;
+ros::Time lap_start_time;
 
 // yaw control
 double last_yaw_;
@@ -90,7 +93,7 @@ void displayTrajWithColor(vector<Eigen::Vector3d> path, double resolution, Eigen
 
 // 可视化速度向量场
 void visualizeVelocityField(const std::vector<Eigen::Vector3d>& traj_points) {
-  if (ilcplan == nullptr) return;
+  if (ilplan == nullptr) return;
   
   visualization_msgs::Marker arrows;
   arrows.header.frame_id = "world";
@@ -140,11 +143,11 @@ void visualizeVelocityField(const std::vector<Eigen::Vector3d>& traj_points) {
                                      binormal * (lat * lateral_dist / samples_per_segment) +
                                      normal * (vert * vertical_dist / samples_per_segment);
         
-        // 调用 ILC 计算该点的速度
+        // 调用 IL 计算该点的速度
         Eigen::Vector3d cmd_vel;
         Eigen::Vector3d refer_pose;
         double yaw_des;
-        ilcplan->computeVelocityCommands(cmd_vel, refer_pose, yaw_des, sample_pt);
+        ilplan->computeVelocityCommands(cmd_vel, refer_pose, yaw_des, sample_pt);
         
         // 缩放速度向量以便可视化
         double scale = 0.15;  // 箭头长度缩放
@@ -212,7 +215,7 @@ void bsplineCallback(plan_manage::BsplineConstPtr msg) {
   _has_traj = true;
   _start_pt = pos_traj.evaluateDeBoorT(0.0); // 获取轨迹起点
 
-  // ====== 设置 ILC Planner ======
+  // ====== 设置 IL Planner ======
   // 1. 从 B-spline 采样 1000 个点
     const int sample_num = 1000;
     std::vector<Eigen::Vector3d> sampled_points;
@@ -229,18 +232,16 @@ void bsplineCallback(plan_manage::BsplineConstPtr msg) {
     double bound = _xth; // 使用全局参数 ILParam/xth
     std::vector<double> xth_vec(sample_num, bound / 3.0); //取等宽跑道的1/3
     
-
-    // 3. 设置 ILC 参数
-    ilcplan->set_param(_vmin, _vmax, _goalth, _kp_vl, _kp_law, _kd_law, 
-                       xth_vec, _kp_path, _kd_path, _tau, _iteration);
+    // 3. 设置 IL 参数
+    ilplan->set_param(_vmin, _vmax, _goalth, _kp_vl, _kp_law, _kd_law, 
+                       xth_vec, _kp_path, _kd_path, _tau, _iteration, use_ilc_);
     
-
   // 3. 调用 setPlan 设置轨迹 (需要3个参数: path, robot_pose, robot_vel)
   Eigen::Vector3d robot_pose = _start_pt;  // 使用轨迹起点
   Eigen::Vector3d robot_vel = Eigen::Vector3d::Zero();  // 初始速度为0
   
-  // 调用ILC核心算法
-  ilcplan->setPlan(sampled_points, robot_pose, robot_vel);
+  // 调用IL核心算法
+  ilplan->setPlan(sampled_points, robot_pose, robot_vel);
   
   // 4. 可视化速度向量场
   //visualizeVelocityField(sampled_points);
@@ -250,53 +251,49 @@ void bsplineCallback(plan_manage::BsplineConstPtr msg) {
 
 void stateCallback(const std_msgs::Int32ConstPtr& msg) {
   // INIT:0 GO_START:1 WAIT_TRIGGER:2 EXEC_TRAJ:3 HOVER:4
+  // When entering EXEC_TRAJ (3) from other states, reset lap start time if it's the first lap or handling re-entry
+  if (fsm_state != 3 && msg->data == 3) {
+      lap_start_time = ros::Time::now();
+      ROS_INFO("[traj_server] Lap %d started ", current_lap + 1);
+  }
+  
   fsm_state = msg->data;
-
 }
 
-void odomCallbck(const nav_msgs::Odometry& msg) {
-  if (msg.child_frame_id == "X" || msg.child_frame_id == "O") return;
-
-  odom = msg;
-
-  /* Visualize real speed and thrust */
-  Eigen::Vector3d current_vel(odom.twist.twist.linear.x, odom.twist.twist.linear.y, odom.twist.twist.linear.z);
-  ros::Time current_time = odom.header.stamp;
-
-  if (last_odom_time_.toSec() == 0) {
-    last_real_vel_ = current_vel;
-    last_odom_time_ = current_time;
-  } else {
-    double dt = (current_time - last_odom_time_).toSec();
-    if (dt > 1e-3) {
-      Eigen::Vector3d accel = (current_vel - last_real_vel_) / dt;
-      
-      // Only publish visualization data when in EXEC_TRAJ state
-      if (fsm_state == 3) {
-        std_msgs::Float64 real_speed_msg;
-        real_speed_msg.data = current_vel.norm();
-        real_speed_pub.publish(real_speed_msg);
-
-        // Total Thrust = Norm(Acc + g) assuming unit mass or just representing specific force
-        std_msgs::Float64 real_thr_msg;
-        real_thr_msg.data = (accel + Eigen::Vector3d(0, 0, 9.8)).norm();
-        real_thr_pub.publish(real_thr_msg);
-      }
-
-      last_real_vel_ = current_vel;
-      last_odom_time_ = current_time;
+void lapCallback(const std_msgs::Int32ConstPtr& msg) {
+    if (msg->data > current_lap) {
+        ros::Time now = ros::Time::now();
+        if (!lap_start_time.isZero()) {
+            double duration = (now - lap_start_time).toSec();
+            lap_times.push_back(duration);
+            ROS_INFO("[traj_server] Lap %d finished in %.3f seconds.", current_lap + 1, duration);
+            
+            // Print all lap times
+            std::cout << "Lap Times: [";
+            for (size_t i = 0; i < lap_times.size(); ++i) {
+                std::cout << lap_times[i] << (i < lap_times.size() - 1 ? ", " : "");
+            }
+            std::cout << "]" << std::endl;
+        }
     }
-  }
+    current_lap = msg->data;
+    
+    /* iterate when lap ends */
+    if(ilplan->use_ilc_==true)
+      ilplan->iterate(ilplan->error_list_ilc);
+} 
 
-  traj_real_.push_back(
-      Eigen::Vector3d(odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z));
-
-  if (traj_real_.size() > 10000) traj_real_.erase(traj_real_.begin(), traj_real_.begin() + 1000);
-
-  // Visualize drone orientation arrow
-  if (true) { // Always visualize if odom is available
+void visualizeYawArrow(const nav_msgs::Odometry& odom) {
     Eigen::Vector3d pos(odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z);
     
+    // Check if orientation quaternion is valid (not zero)
+    if (std::abs(odom.pose.pose.orientation.w) < 1e-6 && 
+        std::abs(odom.pose.pose.orientation.x) < 1e-6 && 
+        std::abs(odom.pose.pose.orientation.y) < 1e-6 && 
+        std::abs(odom.pose.pose.orientation.z) < 1e-6) {
+        return; 
+    }
+
     Eigen::Quaterniond q(odom.pose.pose.orientation.w,
                           odom.pose.pose.orientation.x, 
                           odom.pose.pose.orientation.y, 
@@ -334,7 +331,58 @@ void odomCallbck(const nav_msgs::Odometry& msg) {
     arrow.color.a = 1.0;
     
     drone_arrow_pub.publish(arrow);
+}
+
+
+
+void odomCallbck(const nav_msgs::Odometry& msg) {
+  if (msg.child_frame_id == "X" || msg.child_frame_id == "O") return;
+
+  odom = msg;
+
+  /* Visualize real speed and thrust */
+  Eigen::Vector3d current_vel(odom.twist.twist.linear.x, odom.twist.twist.linear.y, odom.twist.twist.linear.z);
+  ros::Time current_time = odom.header.stamp;
+
+  if (last_odom_time_.toSec() == 0) {
+    last_real_vel_ = current_vel;
+    last_odom_time_ = current_time;
+  } else {
+    double dt = (current_time - last_odom_time_).toSec();
+    if (dt > 1e-3) {
+      Eigen::Vector3d accel = (current_vel - last_real_vel_) / dt;
+      
+      // Only publish visualization data when in EXEC_TRAJ state
+      if (fsm_state == 3) {
+        std_msgs::Float64 real_speed_msg;
+        real_speed_msg.data = current_vel.norm();
+        real_speed_pub.publish(real_speed_msg);
+
+        // Total Thrust = Norm(Acc + g) assuming unit mass or just representing specific force
+        std_msgs::Float64 real_thr_msg;
+        real_thr_msg.data = (accel + Eigen::Vector3d(0, 0, 9.8)).norm();
+        real_thr_pub.publish(real_thr_msg);
+      }
+
+      last_real_vel_ = current_vel;
+      last_odom_time_ = current_time;
+    }
+
+    /* record ILC error only when trajectory is available and we are executing */
+    if (ilplan != nullptr && receive_traj_ && fsm_state == 3 ) {
+        if(ilplan->use_ilc_==true)
+        ilplan->spatialILC_record(Eigen::Vector3d(odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z));
+    }
+
   }
+
+  traj_real_.push_back(
+      Eigen::Vector3d(odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z));
+
+  if (traj_real_.size() > 10000) traj_real_.erase(traj_real_.begin(), traj_real_.begin() + 1000);
+
+  // Visualize drone orientation arrow
+  visualizeYawArrow(odom);
 }
 
 void visCallback(const ros::TimerEvent& e) {
@@ -342,14 +390,14 @@ void visCallback(const ros::TimerEvent& e) {
   displayTrajWithColor(traj_cmd_, 0.05, Eigen::Vector4d(0, 1, 0, 1), 2);
 }
 
-/*ILC专用*/
+/*IL专用*/
 void velCallback(const ros::TimerEvent& e)
 {   
     if (!receive_traj_) return; // 如果还没有接收到轨迹数据，则直接返回
 
-    // 检查 ilcplan 是否已初始化
-    if (ilcplan == nullptr) {
-        ROS_WARN_THROTTLE(5.0, "[traj_server] ilcplan not initialized yet");
+    // 检查 ilplan 是否已初始化
+    if (ilplan == nullptr) {
+        ROS_WARN_THROTTLE(5.0, "[traj_server] ilplan not initialized yet");
         return;
     }
 
@@ -363,7 +411,7 @@ void velCallback(const ros::TimerEvent& e)
         Eigen::Vector3d cmd_vel;
         Eigen::Vector3d refer_pose;
         double yaw_des;
-        ilcplan->computeVelocityCommands(cmd_vel, refer_pose, yaw_des, robot);
+        ilplan->computeVelocityCommands(cmd_vel, refer_pose, yaw_des, robot);
 
 
         /**********打包指令信息*************/
@@ -444,8 +492,6 @@ void posCallback(const ros::TimerEvent& e)
         // Reset setpoint if we just entered this state or drifted too far (safety)
         if (last_state != 1 || (last_setpoint - cur_pos).norm() > 1.0) {
             last_setpoint = cur_pos;
-            ROS_INFO("[traj_server] Entering GO_START. Current Pos: [%f, %f, %f], Goal: [%f, %f, %f]", 
-                cur_pos(0), cur_pos(1), cur_pos(2), dest(0), dest(1), dest(2));
         }
 
         Eigen::Vector3d dir = dest - last_setpoint;
@@ -528,7 +574,6 @@ void posCallback(const ros::TimerEvent& e)
         else if (last_state != fsm_state) {  
                 // For other transitions (e.g. entering HOVER from EXEC), latch current position
                 last_setpoint = Eigen::Vector3d(odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z);
-                ROS_INFO("[traj_server] Hovering at [%f, %f, %f]", last_setpoint(0), last_setpoint(1), last_setpoint(2));
         }
         cmd.velocity.x = 0.0;
         cmd.velocity.y = 0.0;
@@ -570,7 +615,8 @@ int main(int argc, char** argv) {
   }
 
   /*************************************** START IL-Planner相关变量 ***************************************/
-  // 从参数服务器加载 ILC 参数
+  // 从参数服务器加载 IL 参数
+  nh.param("ILParam/use_ilc", use_ilc_, true);
   nh.param("ILParam/vmax", _vmax, 2.0);
   nh.param("ILParam/vmin", _vmin, 1.0);
   nh.param("ILParam/goalth", _goalth, 1.0);
@@ -584,14 +630,15 @@ int main(int argc, char** argv) {
   nh.param("ILParam/dynamic", _tau, 2.5);
   nh.param("ILParam/amax", _amax, 6.0);
 
-
-  // 初始化 ILC planner (仅在 traj_server 中创建和使用)
-  ilcplan = new ilc_planner();
-  ROS_INFO("[traj_server] ILC planner initialized");
+  // 初始化 IL planner (仅在 traj_server 中创建和使用)
+  ilplan = new il_planner();
+  ROS_INFO("[traj_server] IL planner initialized");
   /*************************************** END IL-Planner相关变量 ***************************************/
 
   ros::Subscriber bspline_sub = node.subscribe("planning/bspline", 10, bsplineCallback);
   ros::Subscriber state_sub = node.subscribe("planning/state", 10, stateCallback);
+  ros::Subscriber lap_sub = node.subscribe("/planning/lap_count", 10, lapCallback);
+  
   ros::Subscriber odom_sub = node.subscribe("/odom_world", 50, odomCallbck);
 
   pos_pub = node.advertise<quadrotor_msgs::PositionCommand>("planning/position_cmd", 50);

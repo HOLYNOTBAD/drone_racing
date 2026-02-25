@@ -1,32 +1,35 @@
-#include <plan_manage/ilc_planner.h> // 包含 ilc_planner 的头文件,声明类和成员
-#include <iostream> // 包含标准输入输出流，用于调试输出
-#include <numeric> // 包含 accumulate 等数值算法
-#include <nav_msgs/Odometry.h> // 包含 nav_msgs::Odometry 的消息类型定义
-#include <nav_msgs/Path.h> // 包含 nav_msgs::Path 的消息类型定义
+#include <plan_manage/il_planner.h> 
+#include <iostream> 
+#include <numeric>
+#include <nav_msgs/Odometry.h> 
+#include <nav_msgs/Path.h> 
 
-using namespace std; // 使用 std 命名空间以简化代码中的标准库前缀
+using namespace std; 
 
-// 将全局路径与机器人状态传入本地规划器，初始化并触发 ILC 学习
-bool ilc_planner::setPlan(std::vector<Eigen::Vector3d> orig_global_plan, Eigen::Vector3d robot_pose, Eigen::Vector3d robot_vel) { // setPlan: 设置全局路径与当前机器人状态
-  ROS_INFO("LocalPlanner setPlan"); // 打印 ROS 日志，指示进入 setPlan
+bool il_planner::setPlan(std::vector<Eigen::Vector3d> orig_global_plan, Eigen::Vector3d robot_pose, Eigen::Vector3d robot_vel) { 
+  _global_plan = orig_global_plan; 
 
-  _global_plan.clear(); // 清空内部保存的全局路径
-  _global_plan = orig_global_plan; // 将传入的路径拷贝到内部存储
+  _robot_pose = robot_pose; 
+  _robot_vel = robot_vel; 
 
-  _robot_pose = robot_pose; // 保存当前机器人位姿
-  _robot_vel = robot_vel; // 保存当前机器人速度
+  double v_init = v_min + v_max / 3;     
 
-  double v_init = v_min + v_max / 3;       // 初始速度设为最小速度 v_min
-  // double v_init = _robot_vel.norm();    // 也可以使用当前速度作为初始速度
-  std::vector<double> v_list(_global_plan.size(),v_init); // 构造与路径等长的速度列表 v_list 并初始化为 v_init
-  
-  // double start = clock(); // 可选性能计时
-  spatialILC(v_list, _iteration); // 调用空间 ILC 学习算法，对初始速度列表进行迭代优化
- 
+  std::vector<double> v_list_init(_global_plan.size(),v_init); // 构造与路径等长的速度列表 v_list 并初始化为 v_init
+
+  /* ILP使用 */
+  if(use_ilc_==false) {
+    spatialILP(v_list_init, _iteration);
+    ROS_INFO("ILP initialized.");
+  }
+  /* ILC使用 */
+  if(use_ilc_==true){  
+    spatialILC_init(v_list_init);
+    ROS_INFO("ILC initialized.");
+  }
   return true; // 返回成功
 }
 
-void ilc_planner::set_param(double vmin, double vmax, double goalth, double kpvl, double kplaw, double kdlaw, std::vector<double> xth, double kppath, double kdpath, double tau, int iteration)
+void il_planner::set_param(double vmin, double vmax, double goalth, double kpvl, double kplaw, double kdlaw, std::vector<double> xth, double kppath, double kdpath, double tau, int iteration, bool use_ilc)
 {
   v_max = vmax; // 速度上限
   v_min = vmin; // 速度下限
@@ -38,28 +41,13 @@ void ilc_planner::set_param(double vmin, double vmax, double goalth, double kpvl
   kp_path = kppath; // 路径误差比例增益
   kd_path = kdpath; // 路径误差微分增益
   _tau = tau; // 动力学模型中的时间常数（或响应系数）
-  _iteration = iteration; // ILC 迭代次数
+  _iteration = iteration; // IL 迭代次数
+  use_ilc_ = use_ilc; // ILC 开关
 }
 
-
-// 判断是否已经接近目标点
-bool ilc_planner::judge_reach(){
-  if (_global_plan.size()>0) // 若存在全局路径
-  {
-    Eigen::Vector3d goal_pose = _global_plan.back(); // 取最后一个路径点作为目标
-    Eigen::Vector3d goal_vec = goal_pose - _robot_pose; // 目标向量
-    double goal_dis = goal_vec.norm(); // 到目标的距离
-
-    if (goal_dis < goal_th)
-    {
-      return true; // 小于阈值则认为已到达
-    }
-  }
-  return false; // 否则未到达
-}
 
 // 在全局路径中找到离机器人最近的索引，并返回参考点与方向信息
-bool ilc_planner::get_index(Eigen::Vector3d& refer_pose, Eigen::Vector3d& move_direction, Eigen::Vector3d& move_track, int& index)
+bool il_planner::get_index(Eigen::Vector3d& refer_pose, Eigen::Vector3d& move_direction, Eigen::Vector3d& move_track, int& index)
 {
   std::vector<Eigen::Vector3d>::iterator it = _global_plan.begin(); // 迭代器指向路径起点
   
@@ -94,7 +82,7 @@ bool ilc_planner::get_index(Eigen::Vector3d& refer_pose, Eigen::Vector3d& move_d
 }
 
 // 裁剪全局路径中机器人身后的点（保留未来部分）
-bool ilc_planner::pruneGlobalPlan(double dist_behind_robot)
+bool il_planner::pruneGlobalPlan(double dist_behind_robot)
 {
   if (_global_plan.empty()) return true; // 若路径为空直接返回
 
@@ -126,7 +114,7 @@ bool ilc_planner::pruneGlobalPlan(double dist_behind_robot)
 }
 
 // 在给定位置 p 上，找到最近的轨迹参考点并返回相关信息：refer_pose、move_direction、move_track、error、current
-void ilc_planner::getpoint(Eigen::Vector3d p, Eigen::Vector3d &refer_pose, Eigen::Vector3d &move_direction, Eigen::Vector3d &move_track, double &error, int &current)
+void il_planner::getpoint(Eigen::Vector3d p, Eigen::Vector3d &refer_pose, Eigen::Vector3d &move_direction, Eigen::Vector3d &move_track, double &error, int &current)
 {
   int path_length = _global_plan.size(); // 路径长度
   Eigen::Vector3d p_des; // 当前候选参考点
@@ -155,12 +143,10 @@ void ilc_planner::getpoint(Eigen::Vector3d p, Eigen::Vector3d &refer_pose, Eigen
       move_direction = (next_p_des - p_des).normalized(); // 切向方向为下一个点减当前点并单位化
     }
   }
-
-
 }
 
 // 对速度向量进行饱和处理，使其范数不超过 vmax
-void ilc_planner::saturation(Eigen::Vector3d &v, double vmax)
+void il_planner::saturation(Eigen::Vector3d &v, double vmax)
 {
   double value = v.norm(); // 计算当前速度范数
   if (value > vmax)
@@ -169,29 +155,59 @@ void ilc_planner::saturation(Eigen::Vector3d &v, double vmax)
   }
 }
 
-
-
-
-// 空间 ILC 学习算法的实现：基于给定速度序列 v_list，进行多次迭代优化
-bool ilc_planner::spatialILC(std::vector<double>& v_list, int iteration)
+// 空间 IL 学习算法的实现：基于给定速度序列 v_list，进行多次迭代优化
+bool il_planner::spatialILC_init(std::vector<double>& v_list)
 {
   vel_list.clear(); // 清空内部速度列表
   vel_list = v_list; // 将传入的速度列表复制到成员变量 vel_list
+    
+  // Resize error list to match
+  error_list_ilc.assign(_global_plan.size(), 0.0);
 
-  // std::vector<geometry_msgs::PoseStamped>::iterator it        = _global_plan.begin();
-  int path_length = v_list.size(); // 路径点数量
-  // std::cout << path_length << std::endl;
-  // std::vector<double> pathx(path_length);
-  // std::vector<double> pathy(path_length);
-  // std::vector<double> pathz(path_length);
+  current = 0;
+  current_all = _global_plan.size() - 1;
+  error = 0.0;
+  last_error = 0.0;
+  l = 0;
+  last_l = 0;
+
+  return true;
+}
+
+void il_planner::spatialILC_record(Eigen::Vector3d pos){
+  Eigen::Vector3d p = pos;
+
+  Eigen::Vector3d refer_pose; // 引用的轨迹点
+  Eigen::Vector3d move_direction; // 轨迹切向方向
+  Eigen::Vector3d move_track; // 从当前位置到参考点的向量（横向误差方向）
+
+  last_l = l; // 记录上一次索引
+  last_error = error; // 记录上一次误差
+
+  getpoint(p, refer_pose, move_direction, move_track, error, current); // 找到最近的参考点和误差等信息
+
+  l = current; // 更新当前索引
+
+  if (l > last_l) // 如果索引有推进，用之前的误差填充区间
+  {
+    for (int m=last_l; m<l; m++)
+    {
+      error_list_ilc[m] = error; // 将当前误差赋值给区间内点
+    }
+  }
+  return ;
+}
+
+
+// 空间 ILC 学习算法的实现：基于给定速度序列 v_list，进行多次迭代优化
+bool il_planner::spatialILP(std::vector<double>& v_list_init, int iteration)
+{
+  vel_list.clear(); // 清空内部速度列表
+  vel_list = v_list_init; // 将传入的速度列表复制到成员变量 vel_list
+
+  int path_length = v_list_init.size(); // 路径点数量
+
   std::vector<double> error_list(path_length); // 与路径长度对应的误差缓存
-
-  // for (int j = 0; j<path_length; j++)
-  // {
-  //   pathx[j] = _global_plan[j].pose.position.x;
-  //   pathy[j] = _global_plan[j].pose.position.y;
-  //   pathz[j] = _global_plan[j].pose.position.z;
-  // }
 
   int current_all = path_length-1; // 最大索引（用于循环边界）
 
@@ -206,11 +222,6 @@ bool ilc_planner::spatialILC(std::vector<double>& v_list, int iteration)
   Eigen::Vector3d move_direction; // 轨迹切向方向
   Eigen::Vector3d move_track; // 从当前位置到参考点的向量（横向误差方向）
 
-  // double kp = 0.6;
-  // double kd = 1.5;
-
-  // double vmax = 3;
-  
   for (int i = 0; i<iteration; i++) // ILC 主循环，执行指定次数的迭代学习
   { 
     int k = 0; // 内部步数计数器
@@ -223,24 +234,14 @@ bool ilc_planner::spatialILC(std::vector<double>& v_list, int iteration)
     p = _robot_pose; // 初始化模拟位置为当前机器人位置
     v = _robot_vel; // 初始化模拟速度为当前机器人速度
 
-    while (current < current_all-int(current_all/100)-1 && k < path_length) // 在路径上逐步前进直到末尾或达到步数上限
+    while (current < current_all-int(current_all/100)-1 ) // 在路径上逐步前进直到末尾或达到步数上限
     {
       last_l = l; // 记录上一次索引
       last_error = error; // 记录上一次误差
       // double start = clock();
 
       getpoint(p, refer_pose, move_direction, move_track, error, current); // 找到最近的参考点和误差等信息
-      // cout << current;
-      // cout << " ";
-      // double end = clock();
-      // double last = end -start;
-      // std::cout << last << std::endl;
-      // std::cout << p[0] << std::endl;
-      // std::cout << p[1] << std::endl;
-      // std::cout << "current: "<< current << std::endl;
-      // std::cout <<  "error: " << error << std::endl;
-      // std::cout << move_direction[0] << std::endl;
-      // std::cout << move_direction[1] << std::endl;
+
       l = current; // 更新当前索引
 
       if (l > last_l) // 如果索引有推进，用之前的误差填充区间
@@ -254,15 +255,7 @@ bool ilc_planner::spatialILC(std::vector<double>& v_list, int iteration)
       v_para = move_direction * vel_list[current]; // 沿轨迹方向的速度分量 = 轨迹方向 * 对应速度
       v_perp = move_track * kp_path + (error- last_error) / (error+0.00001) * move_track * kd_path; // 横向校正项（包含比例与差分项）
 
-      //曲率补偿
-      Eigen::Vector3d curvature = getCurvature(current);
-      double curvature_effect = curvature.norm();
-      if (curvature_effect > 0.0001) // 避免除零
-      {
-        v_perp += move_direction.cross(curvature).normalized() * curvature_effect * vel_list[current] * 3.0;
-      }
-
-
+      /* 在这里可以做曲率补偿 TODO */
 
       v_des = v_para+v_perp; // 合成目标速度
 
@@ -271,22 +264,14 @@ bool ilc_planner::spatialILC(std::vector<double>& v_list, int iteration)
 
       k++; // 步数计数
     }
-    // cout << " " <<endl;
-    // for (auto i = 0; i != error_list.size(); ++i) cout << error_list[i];
-    // cout << " " <<endl;
+
     iterate(error_list); // 根据误差序列更新 vel_list（学习步骤）
-    // std::cout << "leanrning 1 iteration" << endl;
-    // for (int kkk=0; kkk<error_list.size(); kkk++) std::cout << error_list[kkk] << endl;
+
   }
-  // cout << " " <<endl;
-  // for (auto i = 0; i != vel_list.size(); ++i) cout << vel_list[i];
-  // cout << " " <<endl;
   return true; // 表示学习过程完成
 }
 
-
-// 简单动力学模型：通过一阶闭环模型将期望速度转换为实际速度和位置的更新
-void ilc_planner::dynamic(Eigen::Vector3d vdes, Eigen::Vector3d &v, Eigen::Vector3d &p)
+void il_planner::dynamic(Eigen::Vector3d vdes, Eigen::Vector3d &v, Eigen::Vector3d &p)
 {
   Eigen::Vector3d a; // 加速度
   a = _tau*(vdes-v); // 一阶差分的加速度：比例于速度误差
@@ -295,15 +280,15 @@ void ilc_planner::dynamic(Eigen::Vector3d vdes, Eigen::Vector3d &v, Eigen::Vecto
   p = p+dt*v; // 更新位置
 }
 
-
 // 根据误差序列执行一次 ILC 的参数更新（vel_list 的调整）
-void ilc_planner::iterate(std::vector<double> error_list)
+void il_planner::iterate(std::vector<double> error_list)
 {
-  // double kp_law = 1;
-  // double kd_law = 0.2;
-  // double kp_vl = 0.2;
 
-  // double xth = 1.5;
+  l = 0;
+  last_l = 0;
+  current = 0;
+  error = 0.0;
+  last_error = 0.0;
 
   double temp; // 临时变量用于计算更新量
   if (error_list.size()>1) // 至少需要两个点才能计算差分项
@@ -313,8 +298,6 @@ void ilc_planner::iterate(std::vector<double> error_list)
       temp = kp_vl * ( 1 / ( 1 + exp(-kp_law*error_list[i]-kd_law*(error_list[i+1]-error_list[i])+x_th[i]) ) -0.5); // 非线性变换得到学习量
       vel_list[i] = vel_list[i] - temp; // 更新速度表
     }
-    // std::cout << vel_list[0] << std::endl;
-    // std::cout << vel_list.size() << std::endl;
 
     for (int i = 0; i < vel_list.size()-1; i++) 
     { 
@@ -326,11 +309,8 @@ void ilc_planner::iterate(std::vector<double> error_list)
   }
 }
 
-// 根据机器人当前位姿计算要发布的速度命令 cmd_vel，返回参考点 refer_pose 与期望偏航 yaw_des
-bool ilc_planner::computeVelocityCommands(Eigen::Vector3d &cmd_vel, Eigen::Vector3d &refer_pose, double &yaw_des, Eigen::Vector3d robot_pose) 
+bool il_planner::computeVelocityCommands(Eigen::Vector3d &cmd_vel, Eigen::Vector3d &refer_pose, double &yaw_des, Eigen::Vector3d robot_pose) 
 {
-  // ROS_INFO("LocalPlanner computeVelocityCommands"); // 可选日志
-
   Eigen::Vector3d move_direction; // 沿轨迹切向方向
   Eigen::Vector3d move_track; // 横向偏差方向
 
@@ -340,27 +320,18 @@ bool ilc_planner::computeVelocityCommands(Eigen::Vector3d &cmd_vel, Eigen::Vecto
 
   Eigen::Vector3d robot_dis = refer_pose - robot_pose; // 机器人到参考点的向量
   double error = robot_dis.norm(); // 距离误差
-  // double dt = 0.05;
+  /* main algo */
   cmd_vel = vel_list[index]*move_direction + move_track*(kp_path*error + kd_path*(error-_last_error)); // 速度由前向速度与横向修正组成
   saturation(cmd_vel, v_max); // 对速度进行饱和
 
   _last_error = error; // 保存误差用于下次微分项计算
   yaw_des = atan2(move_direction[1], move_direction[0]); // 计算期望偏航角（朝向切向方向）
 
-  // double k_yaw = 0.5;
-
-  // double diff_yaw = yaw_des - yaw;
-  // if (diff_yaw < 0)
-  //   {diff_yaw += 2*3.14159265;}
-  // if (diff_yaw > 3.14159265)
-  //   {diff_yaw -= 2*3.14159265;}
-  // cmd_vel.angular.z = k_yaw*diff_yaw;
-  
   return true; // 成功计算速度命令
 }
 
-// 根据机器人位姿选择参考点并返回对应的速度表索引以及方向信息
-bool ilc_planner::get_v_list(Eigen::Vector3d robot_pose, Eigen::Vector3d &refer_pose, Eigen::Vector3d& move_direction, Eigen::Vector3d& move_track, int& index) 
+// 根据机器人位姿选择参考点，返回对应的速度表索引以及方向信息
+bool il_planner::get_v_list(Eigen::Vector3d robot_pose, Eigen::Vector3d &refer_pose, Eigen::Vector3d& move_direction, Eigen::Vector3d& move_track, int& index) 
 {
   std::vector<Eigen::Vector3d>::iterator it = _global_plan.begin(); // 迭代器从头开始
   
@@ -398,7 +369,8 @@ bool ilc_planner::get_v_list(Eigen::Vector3d robot_pose, Eigen::Vector3d &refer_
   return true; // 成功返回
 }
 
-Eigen::Vector3d ilc_planner::getCurvature(int l)
+/* 辅助函数 计算曲率 */
+Eigen::Vector3d il_planner::getCurvature(int l)
 {
   int path_length = _global_plan.size();
 

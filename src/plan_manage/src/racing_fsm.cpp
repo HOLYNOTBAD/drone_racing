@@ -1,4 +1,5 @@
 #include <iostream>
+#include <plan_manage/il_planner.h>
 #include <plan_manage/racing_fsm.h>
 #include <std_msgs/Int32.h>
 
@@ -10,6 +11,7 @@ void RacingFSM::init(ros::NodeHandle& nh) {
   have_target_ = false;
   have_odom_   = false;
   trigger_     = false;
+  lap_cnt_     = 0;
 
   /*  fsm param  */
 
@@ -113,7 +115,7 @@ void RacingFSM::execFSMCallback(const ros::TimerEvent& e) {
   static int fsm_num = 0;
   fsm_num++;
   if (fsm_num == 100) {
-    printFSMExecState();
+    // printFSMExecState();
     if (!have_odom_) cout << "no odom." << endl;
     fsm_num = 0;
   }
@@ -125,8 +127,7 @@ void RacingFSM::execFSMCallback(const ros::TimerEvent& e) {
       }
       gen_ref_traj();
       vis_ref_traj();
-      pub_ref_traj(); //发布参考轨迹后，飞机将会自动开始执行，进入EXEC_TRAJ状态
-
+      pub_ref_traj(); 
       vis_bound();
       changeFSMExecState(GO_START, "FSM");
       break;
@@ -147,6 +148,7 @@ void RacingFSM::execFSMCallback(const ros::TimerEvent& e) {
       Eigen::Vector3d body_dir = R.col(0); // Body X axis
       double current_yaw = atan2(body_dir(1), body_dir(0));
       
+
       // Compute yaw error
       double yaw_err = current_yaw - start_yaw;
       // Normalize to [-pi, pi]
@@ -170,6 +172,13 @@ void RacingFSM::execFSMCallback(const ros::TimerEvent& e) {
     }
 
     case WAIT_TRIGGER: {
+      
+#ifdef AUTO_TRAIN
+        changeFSMExecState(EXEC_TRAJ, "FSM");
+        trigger_ = false; // 重置trigger
+        flight_start_time_ = ros::Time::now(); // Start flight timer
+#endif
+
       if (trigger_) {
         changeFSMExecState(EXEC_TRAJ, "FSM");
         trigger_ = false; // 重置trigger
@@ -187,7 +196,7 @@ void RacingFSM::execFSMCallback(const ros::TimerEvent& e) {
         break;
       }
 
-      // Case 2: Flight finished (To be implemented)
+      // Case 2: Flight finished 
       bool flight_finished = false; 
       if (!traj_pts_.empty()) {
           Eigen::Vector3d end_pt = traj_pts_.back();
@@ -207,12 +216,16 @@ void RacingFSM::execFSMCallback(const ros::TimerEvent& e) {
         std_msgs::Int32 lap_msg;
         lap_msg.data = lap_cnt_;
         lap_cnt_pub_.publish(lap_msg);
+
         break;
       }
 
     }
 
     case HOVER: {
+#ifdef AUTO_TRAIN
+        changeFSMExecState(GO_START, "FSM");
+#endif
       if (trigger_) {
         changeFSMExecState(GO_START, "FSM");
         trigger_ = false;
